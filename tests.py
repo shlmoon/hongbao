@@ -13,8 +13,8 @@ class hongbaoTest(unittest.TestCase):
 
     def test_hongbao_valid(self):
         self.hb.set_hongbao_parm(100, 'onEn6siHKrAmcMTmsCiDbtqPTvEk')
-        self.assertTrue(self.hb.get_hongbao_resp())
+        self.assertTrue(self.hb.send_hongbao())
 
     def test_hongbao_invalid(self):
         self.hb.set_hongbao_parm(1, 'onEn6siHKrAmcMTmsCiDbtq')
-        self.assertFalse(self.hb.get_hongbao_resp())
+        self.assertFalse(self.hb.send_hongbao())
