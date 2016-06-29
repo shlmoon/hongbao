@@ -12,6 +12,7 @@ import time
 import random
 import string
 
+
 class BasicConf(object):
     app_id = ''
     app_secret = ''
@@ -19,18 +20,20 @@ class BasicConf(object):
     wxappid = ''
     key = ''
 
+
 class hongbaoException(Exception):
     def __init__(self, code, msg):
-        self.code = code if code else 0
-        self.msg = msg if msg else ''
+        self._code = code if code else 0
+        self._msg = msg if msg else ''
 
     @property
-    def get_code(self):
-        return self.code
+    def code(self):
+        return self._code
 
-    @get_code.setter
-    def set_values(self, code):
-        self.code = code
+    @code.setter
+    def code(self, code):
+        self._code = code
+
 
 class hongbaoUtils(object):
     def get_now_str(self):
@@ -84,7 +87,7 @@ class hongbao(BasicConf, hongbaoUtils):
                 resp = s.send(prepped, verify=True, cert=(self.SSLCERT_PATH, self.SSLKEY_PATH))
             return resp.text
         except Exception:
-            # self.exce.set_values(codeEnum)
+            self.exce.code(codeEnum)
             raise self.exce
 
     def set_hongbao_parm(self, total_amount, open_id):
