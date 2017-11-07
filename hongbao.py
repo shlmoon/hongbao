@@ -1,28 +1,37 @@
 # encoding: utf-8
 
-import requests
-
+from datetime import datetime
 from lxml import etree
 from StringIO import StringIO
 
 import hashlib
-from datetime import datetime
-
+import requests
 import time
 import random
 import string
+import threading
 
 
-class BasicConf(object):
-    app_id = ''
-    app_secret = ''
-    mch_id = ''
-    wxappid = ''
-    key = ''
+class Singleton(object):
+    """可配置单例模式"""
+
+    _instance_lock = threading.Lock()
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "_instance"):
+            with cls._instance_lock:
+                if not hasattr(cls, "_instance"):
+                    impl = cls.configure() if hasattr(cls, "configure") else cls
+                    instance = super(Singleton, cls).__new__(impl, *args, **kwargs)
+                    if not isinstance(instance, cls):
+                        instance.__init__(*args, **kwargs)
+                    cls._instance = instance
+        return cls._instance
 
 
-class hongbaoException(Exception):
-    def __init__(self, code, msg):
+class HongbaoException(Exception):
+    def __init__(self, code=None, msg=None):
         self._code = code if code else 0
         self._msg = msg if msg else ''
 
@@ -35,98 +44,104 @@ class hongbaoException(Exception):
         self._code = code
 
 
-class hongbaoUtils(object):
-    def get_now_str(self):
-        return datetime.strftime(datetime.now(), '%Y%m%d')
+class WeChatConfig(object):
+    APP_ID = ''
+    APP_SECRET = ''
+    MCH_ID = ''
+    WXAPP_ID = ''
+    KEY = ''
 
-    def get_md5_msg(self, msg):
-        return hashlib.md5(msg).hexdigest()
 
-    def get_sha_msg(self, msg):
-        return hashlib.sha1(msg).hexdigest()
+def generator_now_string():
+    # todo if django: timezone.now()
+    return datetime.strftime(datetime.now(), '%Y%m%d')
 
-    def create_sign_nonce_str(self, len):
-        return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(len))
+def generator_timestamp():
+    return int(time.time())
 
-    def create_timestamp(self):
-        return int(time.time())
+def generator_md5_msg(msg=None):
+    return hashlib.md5(msg).hexdigest()
 
-class hongbao(BasicConf, hongbaoUtils):
-    """docstring for hongbao"""
-    # act_name = ''
-    # remart = ''
-    # send_name = ''
-    # wishing = ''
+def generator_sha_msg(msg=None):
+    return hashlib.sha1(msg).hexdigest()
+
+def generator_nonce_str(len=6):
+    return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(len))
+
+
+class WeChatHongbao(Singleton, WeChatConfig):
     SSLCERT_PATH = ''
     SSLKEY_PATH = ''
-    hongbao_dict = {
-    'act_name': 'shlmoon_test',
-    'client_ip': '127.0.0.1',
-    'mch_billno': '',
-    'mch_id': '123456456',
-    'nonce_str': '',
-    're_openid': '',
-    'remark': 'thank you',
-    'send_name': 'shlmoon_account',
-    'total_amount': 0,
-    'total_num': 1,
-    'wishing': 'wishing',
-    'wxappid': 'shlmoon_appid',
-    'sign': ''
+    uri = 'https://api.mch.weixin.qq.com/mmpaymkttransfers/sendredpack'
+    PARAM_DICT = {
+        'act_name': 'shlmoon_test',
+        'client_ip': '127.0.0.1',
+        'mch_billno': '',
+        'mch_id': '123456456',
+        'nonce_str': '',
+        're_openid': '',
+        'remark': 'thank you',
+        'send_name': 'shlmoon_account',
+        'total_amount': 0,
+        'total_num': 1,
+        'wishing': 'wishing',
+        'wxappid': 'shlmoon_appid',
+        'sign': ''
     }
-    def __init__(self):
-        super(hongbao, self).__init__()
-        self.exce = hongbaoException(0, '')
 
-    def post_hongbao(self, url, data):
+    def __init__(self, *args, **kwargs):
+        super(WeChatHongbao, self).__init__(*args, **kwargs)
+
+    def post_xml(self, url, data):
         try:
             with requests.Session() as s:
                 headers = {'Content-Type': 'application/xml'}
                 req = requests.Request('POST', url, data=data, headers=headers)
                 prepped = s.prepare_request(req)
                 resp = s.send(prepped, verify=True, cert=(self.SSLCERT_PATH, self.SSLKEY_PATH))
-            return resp.text
-        except Exception:
-            self.exce.code(codeEnum)
-            raise self.exce
-
-    def set_hongbao_parm(self, total_amount, open_id):
-        self.hongbao_dict['total_amount'] = total_amount
-        self.hongbao_dict['re_openid'] = open_id
-        self.hongbao_dict['nonce_str'] = self.create_sign_nonce_str(15)
-        self.hongbao_dict['wxappid'] = self.app_id
-        self.hongbao_dict['mch_billno'] = '%s%s%s' % (self.hongbao_dict.get('mch_id'), self.get_now_str(), self.create_timestamp())
-        self.hongbao_dict['sign'] = self.get_sign(paraMap=self.hongbao_dict)
+                return resp.text
+        except (TypeError, ValueError), e:
+            # todo: error logger
+            raise HongbaoException(code=0, msg=str(e))
 
     def get_sign(self, paraMap=None):
         def _formatData(paraMap=None):
-            try:
-                del paraMap['sign']
-            except KeyError:
-                pass
-            return ['%s=%s' % (k, paraMap[k]) for k in sorted(paraMap)]
+            return ['%s=%s' % (k, paraMap[k]) for k in sorted(paraMap) if not k == 'sign']
         sign_valus = _formatData(paraMap=paraMap)
-        sign_valus = '%s&key=%s' % (sign_valus, self.key)
-        return self.get_md5_msg(sign_valus).upper()
+        sign_valus = '%s&key=%s' % (sign_valus, self.KEY)
+        return generator_md5_msg(msg=sign_valus).upper()
 
-    def get_hongbao_xml(self):
+    def set_param(self, **kwargs):
+        self.PARAM_DICT['act_name'] = kwargs.get('act_name') or self.PARAM_DICT['act_name']
+        self.PARAM_DICT['total_amount'] = kwargs.get('total_amount') or self.PARAM_DICT['total_amount']
+        self.PARAM_DICT['re_openid'] = kwargs.get('re_openid')
+        self.PARAM_DICT['nonce_str'] = generator_nonce_str(len=15)
+        self.PARAM_DICT['wxappid'] = self.APP_ID
+        self.PARAM_DICT['mch_billno'] = '{mch}{ns}{st}'.format(
+            mch=self.PARAM_DICT['mch_id'],
+            ns=generator_now_string(),
+            st=generator_timestamp()
+        )
+        self.PARAM_DICT['sign'] = self.get_sign(paraMap=self.PARAM_DICT)
+
+    def generator_hongbao_xml(self):
         content = etree.Element('xml')
-        for parm_xml in self.hongbao_dict.keys():
+        for parm_xml in self.PARAM_DICT.keys():
             etree.SubElement(content, parm_xml)
-            setattr(parm_xml, 'text', self.hongbao_dict.get('parm_xml'))
-            # parm_xml.text = hongbao_dict.get(parm_xml, None)
+            setattr(parm_xml, 'text', self.PARAM_DICT[parm_xml])
         return etree.tostring(content, xml_declaration=True, encoding='utf-8')
 
     def send_hongbao(self):
         try:
-            url = 'https://api.mch.weixin.qq.com/mmpaymkttransfers/sendredpack'
-            data = self.get_hongbao_data()
-            valus = self.post_hongbao(url, data)
+            data = self.generator_hongbao_xml()
+            valus = self.post_xml(self.uri, data)
+            # todo: info logger. data-valus
             root = etree.parse(StringIO(valus.decode('utf-8')))
             tree = root.getroot()
             ret = tree.xpath(r'result_code')[0].text
             if ret == u'FAIL':
                 return False
             return True
-        except:
-            return False
+        except Exception, e:
+            # todo: error logger
+            raise HongbaoException(code=0, msg=str(e))
