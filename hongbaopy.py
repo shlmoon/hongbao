@@ -56,14 +56,18 @@ def generator_now_string():
     # todo if django: timezone.now()
     return datetime.strftime(datetime.now(), '%Y%m%d')
 
+
 def generator_timestamp():
     return int(time.time())
+
 
 def generator_md5_msg(msg=None):
     return hashlib.md5(msg).hexdigest()
 
+
 def generator_sha_msg(msg=None):
     return hashlib.sha1(msg).hexdigest()
+
 
 def generator_nonce_str(len=6):
     return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(len))
@@ -72,22 +76,6 @@ def generator_nonce_str(len=6):
 class WeChatHongbao(Singleton, WeChatConfig):
     SSLCERT_PATH = ''
     SSLKEY_PATH = ''
-    uri = 'https://api.mch.weixin.qq.com/mmpaymkttransfers/sendredpack'
-    PARAM_DICT = {
-        'act_name': 'shlmoon_test',
-        'client_ip': '127.0.0.1',
-        'mch_billno': '',
-        'mch_id': '123456456',
-        'nonce_str': '',
-        're_openid': '',
-        'remark': 'thank you',
-        'send_name': 'shlmoon_account',
-        'total_amount': 0,
-        'total_num': 1,
-        'wishing': 'wishing',
-        'wxappid': 'shlmoon_appid',
-        'sign': ''
-    }
 
     def __init__(self, *args, **kwargs):
         super(WeChatHongbao, self).__init__(*args, **kwargs)
@@ -111,30 +99,37 @@ class WeChatHongbao(Singleton, WeChatConfig):
         sign_valus = '%s&key=%s' % (sign_valus, self.KEY)
         return generator_md5_msg(msg=sign_valus).upper()
 
-    def set_param(self, **kwargs):
-        self.PARAM_DICT['act_name'] = kwargs.get('act_name') or self.PARAM_DICT['act_name']
-        self.PARAM_DICT['total_amount'] = kwargs.get('total_amount') or self.PARAM_DICT['total_amount']
-        self.PARAM_DICT['re_openid'] = kwargs.get('re_openid')
-        self.PARAM_DICT['nonce_str'] = generator_nonce_str(len=15)
-        self.PARAM_DICT['wxappid'] = self.APP_ID
-        self.PARAM_DICT['mch_billno'] = '{mch}{ns}{st}'.format(
-            mch=self.PARAM_DICT['mch_id'],
-            ns=generator_now_string(),
-            st=generator_timestamp()
-        )
-        self.PARAM_DICT['sign'] = self.get_sign(paraMap=self.PARAM_DICT)
-
-    def generator_hongbao_xml(self):
+    def generator_hongbao_xml(self, **kwargs):
+        _keys = ['act_name', 're_openid', 'remark', 'send_name', 'total_amount', 'wishing']
+        g_keys = [k for k, v in kwargs.iteritems() if v]
+        if set(_keys).issubset(set(g_keys)):
+            raise HongbaoException(code=0, msg=u'参数不完整 {0}-{1}'.format(_keys, g_keys))
+        param_dict = {
+            'act_name': kwargs.get('act_name'),
+            'client_ip': '127.0.0.1',
+            'mch_id': '123456456', # 商户id
+            'nonce_str': generator_nonce_str(len=15),
+            're_openid': kwargs.get('re_openid'),
+            'remark': kwargs.get('remark'),
+            'send_name': kwargs.get('send_name'),
+            'total_amount': kwargs.get('total_amount') or 0,
+            'total_num': kwargs.get('total_num') or 1,
+            'wishing': 'wishing',
+            'wxappid': self.APP_ID
+        }
+        param_dict['mch_billno'] = '{0}{1}{2}'.format(param_dict['mch_id'], generator_now_string(), generator_timestamp())
+        param_dict['sign'] = self.get_sign(paraMap=param_dict)
         content = etree.Element('xml')
-        for parm_xml in self.PARAM_DICT.keys():
+        for parm_xml in param_dict.keys():
             etree.SubElement(content, parm_xml)
-            setattr(parm_xml, 'text', self.PARAM_DICT[parm_xml])
+            setattr(parm_xml, 'text', param_dict[parm_xml])
         return etree.tostring(content, xml_declaration=True, encoding='utf-8')
 
-    def send_hongbao(self):
+    def send_hongbao(self, **kwargs):
         try:
-            data = self.generator_hongbao_xml()
-            valus = self.post_xml(self.uri, data)
+            uri = 'https://api.mch.weixin.qq.com/mmpaymkttransfers/sendredpack'
+            data = self.generator_hongbao_xml(**kwargs)
+            valus = self.post_xml(uri, data)
             # todo: info logger. data-valus
             root = etree.parse(StringIO(valus.decode('utf-8')))
             tree = root.getroot()
